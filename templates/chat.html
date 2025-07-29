@@ -125,106 +125,129 @@
   </div>
 
   <script>
-    const sessionId = Math.random().toString(36).substring(2);
+  const sessionId = Math.random().toString(36).substring(2);
 
-    function appendMessage(sender, text) {
-      const chatBody = document.getElementById("chat-body");
-      const messageDiv = document.createElement("div");
-      messageDiv.classList.add("message", sender);
+  function appendMessage(sender, initialText = "") {
+    const chatBody = document.getElementById("chat-body");
+    const messageDiv = document.createElement("div");
+    messageDiv.classList.add("message", sender);
 
-      const textDiv = document.createElement("div");
-      textDiv.classList.add("text");
-      textDiv.innerHTML = text;
+    const textDiv = document.createElement("div");
+    textDiv.classList.add("text");
+    textDiv.innerHTML = initialText;
 
-      messageDiv.appendChild(textDiv);
-      chatBody.appendChild(messageDiv);
-      chatBody.scrollTop = chatBody.scrollHeight;
+    messageDiv.appendChild(textDiv);
+    chatBody.appendChild(messageDiv);
+    chatBody.scrollTop = chatBody.scrollHeight;
+
+    return textDiv;
+  }
+
+  function showTypingIndicator() {
+    const chatBody = document.getElementById("chat-body");
+    const typingDiv = document.createElement("div");
+    typingDiv.id = "typing-indicator";
+    typingDiv.classList.add("message", "bot");
+
+    const textDiv = document.createElement("div");
+    textDiv.classList.add("text", "typing");
+    textDiv.innerText = "Runner AI is typing...";
+
+    typingDiv.appendChild(textDiv);
+    chatBody.appendChild(typingDiv);
+    chatBody.scrollTop = chatBody.scrollHeight;
+  }
+
+  function removeTypingIndicator() {
+    const typing = document.getElementById("typing-indicator");
+    if (typing) typing.remove();
+  }
+
+  function disableInput() {
+    document.getElementById("user-input").disabled = true;
+    document.getElementById("send-btn").disabled = true;
+  }
+
+  function enableInput() {
+    document.getElementById("user-input").disabled = false;
+    document.getElementById("send-btn").disabled = false;
+    document.getElementById("user-input").focus();
+  }
+
+  function formatResponse(text) {
+    if (typeof text !== "string") {
+      text = JSON.stringify(text, null, 2);
     }
 
-    function showTypingIndicator() {
-      const chatBody = document.getElementById("chat-body");
-      const typingDiv = document.createElement("div");
-      typingDiv.id = "typing-indicator";
-      typingDiv.classList.add("message", "bot");
+    return text
+      .replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>")         // bold
+      .replace(/`(.*?)`/g, "<code>$1</code>")                   // inline code
+      .replace(/(?:^|\s)(https?:\/\/[^\s]+)/g, ' <a href="$1" target="_blank">$1</a>'); // links
+  }
 
-      const textDiv = document.createElement("div");
-      textDiv.classList.add("text", "typing");
-      textDiv.innerText = "Runner AI is typing...";
+  function typeText(element, rawHtml, callback) {
+    const tempDiv = document.createElement("div");
+    tempDiv.innerHTML = rawHtml;
+    const plainText = tempDiv.innerText || tempDiv.textContent;
 
-      typingDiv.appendChild(textDiv);
-      chatBody.appendChild(typingDiv);
-      chatBody.scrollTop = chatBody.scrollHeight;
-    }
+    let index = 0;
+    const typingSpeed = 15;
 
-    function removeTypingIndicator() {
-      const typing = document.getElementById("typing-indicator");
-      if (typing) typing.remove();
-    }
-
-    function disableInput() {
-      document.getElementById("user-input").disabled = true;
-      document.getElementById("send-btn").disabled = true;
-    }
-
-    function enableInput() {
-      document.getElementById("user-input").disabled = false;
-      document.getElementById("send-btn").disabled = false;
-      document.getElementById("user-input").focus();
-    }
-
-    function formatResponse(text) {
-      if (typeof text !== "string") {
-        text = JSON.stringify(text, null, 2);
-      }
-
-      return text
-        .replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>")         // bold
-        .replace(/\n/g, "<br>")                                    // newlines
-        .replace(/`(.*?)`/g, "<code>$1</code>")                    // inline code
-        .replace(/(?:^|\s)(https?:\/\/[^\s]+)/g, ' <a href="$1" target="_blank">$1</a>'); // links
-    }
-
-    async function sendMessage() {
-      const input = document.getElementById("user-input");
-      const message = input.value.trim();
-      if (!message) return;
-
-      appendMessage("user", message);
-      input.value = "";
-      disableInput();
-      showTypingIndicator();
-
-      try {
-        const res = await fetch("/chat", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json"
-          },
-          body: JSON.stringify({ message, session_id: sessionId })
-        });
-
-        const data = await res.json();
-        removeTypingIndicator();
-        enableInput();
-
-        if (data.status === "success") {
-          const raw = data.data.answer || data.data;
-          const formatted = formatResponse(raw);
-          appendMessage("bot", formatted);
-        } else {
-          appendMessage("bot", "⚠️ Error: " + (data.error || "Unknown error"));
-        }
-      } catch (err) {
-        console.error(err);
-        removeTypingIndicator();
-        appendMessage("bot", "⚠️ Failed to connect to the server.");
-        enableInput();
+    function type() {
+      if (index < plainText.length) {
+        const char = plainText.charAt(index);
+        element.innerHTML += char === "\n" ? "<br>" : char;
+        index++;
+        setTimeout(type, typingSpeed);
+      } else {
+        element.innerHTML = rawHtml;  // Replace with actual HTML after typing
+        if (callback) callback();
       }
     }
+    type();
+  }
 
-    document.getElementById("user-input").addEventListener("keypress", function (e) {
-      if (e.key === "Enter") sendMessage();
-    });
-  </script>
+  async function sendMessage() {
+    const input = document.getElementById("user-input");
+    const message = input.value.trim();
+    if (!message) return;
+
+    const userBubble = appendMessage("user", message);
+    input.value = "";
+    disableInput();
+    showTypingIndicator();
+
+    try {
+      const res = await fetch("/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message, session_id: sessionId })
+      });
+
+      const data = await res.json();
+      removeTypingIndicator();
+
+      if (data.status === "success") {
+        const raw = data.data.answer || data.data;
+        const formatted = formatResponse(raw);
+        const botBubble = appendMessage("bot", "");
+        typeText(botBubble, formatted, enableInput);
+      } else {
+        appendMessage("bot", "⚠️ Error: " + (data.error || "Unknown error"));
+        enableInput();
+      }
+    } catch (err) {
+      console.error(err);
+      removeTypingIndicator();
+      appendMessage("bot", "⚠️ Failed to connect to the server.");
+      enableInput();
+    }
+  }
+
+  document.getElementById("user-input").addEventListener("keypress", function (e) {
+    if (e.key === "Enter") sendMessage();
+  });
+</script>
+
 </body>
 </html>
