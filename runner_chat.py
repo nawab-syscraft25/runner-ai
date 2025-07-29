@@ -25,7 +25,7 @@ api_key = os.getenv("GOOGLE_API_KEY")
 
 serpapi_key = os.getenv("serpapi_key")
 
-
+import dateparser  
 class State(TypedDict):
     # Messages have the type "list". The `add_messages` function
     # in the annotation defines how this state key should be updated
@@ -35,10 +35,52 @@ class State(TypedDict):
 
 
 
+# @tool
+# def google_search_marathon(query: str, city: str = None) -> List[Dict[str, str]]:
+#     """
+#     Use SerpAPI to search for marathon events based on a query and optional city.
+    
+#     Args:
+#         query (str): The search query, e.g., "upcoming marathons".
+#         city (str, optional): City to narrow the search, e.g., "Indore". Defaults to None.
+#     Returns:
+#         List[Dict[str, str]]: A list of results with title, link, and snippet.
+#     """
+#     location = f"{city}, India" if city else "India"
+    
+#     params = {
+#         "q": f"{query} in {location}",
+#         "location": location,
+#         "hl": "en",
+#         "gl": "in",
+#         "api_key": serpapi_key,
+#         "engine": "google"
+#     }
+
+#     try:
+#         response = requests.get("https://serpapi.com/search", params=params)
+#         response.raise_for_status()
+#         results = response.json()
+
+#         return [
+#             {
+#                 "title": r.get("title"),
+#                 "link": r.get("link"),
+#                 "snippet": r.get("snippet", "")
+#             }
+#             for r in results.get("organic_results", [])
+#         ]
+#     except requests.exceptions.RequestException as e:
+#         return [{"error": str(e)}]
+
+from datetime import datetime
+
+
 @tool
 def google_search_marathon(query: str, city: str = None) -> List[Dict[str, str]]:
     """
     Use SerpAPI to search for marathon events based on a query and optional city.
+    Only returns results with dates in the future.
     
     Args:
         query (str): The search query, e.g., "upcoming marathons".
@@ -62,20 +104,53 @@ def google_search_marathon(query: str, city: str = None) -> List[Dict[str, str]]
         response.raise_for_status()
         results = response.json()
 
-        return [
-            {
-                "title": r.get("title"),
-                "link": r.get("link"),
-                "snippet": r.get("snippet", "")
-            }
-            for r in results.get("organic_results", [])
-        ]
+        current_date = datetime.now()
+        future_results = []
+
+        for r in results.get("organic_results", []):
+            title = r.get("title", "")
+            snippet = r.get("snippet", "")
+            link = r.get("link", "")
+
+            # Try to find a date in the snippet
+            date_match = re.search(r'(\d{1,2}[\/\-\s]\w+[\/\-\s]\d{2,4})', snippet) or \
+                         re.search(r'(\w+\s+\d{1,2},\s+\d{4})', snippet) or \
+                         re.search(r'(\d{1,2}\s+\w+\s+\d{4})', snippet)
+
+            if date_match:
+                event_date = dateparser.parse(date_match.group(1))
+                if event_date and event_date.date() >= current_date.date():
+                    future_results.append({
+                        "title": title,
+                        "link": link,
+                        "snippet": snippet
+                    })
+            else:
+                # Skip if date is missing or ambiguous
+                continue
+
+        return future_results or [{
+            "title": "No upcoming marathons found.",
+            "link": "",
+            "snippet": f"We couldn’t find any events with future dates. Try a different city or broader search."
+        }]
+
     except requests.exceptions.RequestException as e:
         return [{"error": str(e)}]
 
 
+@tool
+def get_date_and_time(queary: str) -> str:
+    """
+    Returns the current date and time in ISO format. 
+    takes a query string but does not use it.
+    Returns:
+        str: Current date and time in ISO format.
+    """
+    return datetime.now().isoformat()
 
-tools = [google_search_marathon]
+
+tools = [google_search_marathon, get_date_and_time]
 
 # llm = init_chat_model("google_genai:gemini-2.0-flash")
 llm = init_chat_model("google_genai:gemini-2.5-pro")
@@ -85,17 +160,27 @@ llm_with_tools = llm.bind_tools(tools)
 
 SYSTEM_PROMPT = SystemMessage(
     content="""
-You are an expert virtual coach and assistant for athletes, especially runners. Your goal is to support users in improving their performance, training smarter, and staying updated about upcoming marathons and running events across India or globally.
+You are an expert virtual coach and assistant for athletes, especially runners, representing RoadRunners India (https://roadrunners.in/). Your mission is to support users in improving their performance, training smarter, and staying updated on upcoming marathons and running events across India and globally.
 
 You can:
-- Give guidance on running techniques, fitness tips, nutrition, and recovery.
-- Recommend training schedules for beginner to advanced runners.
-- Search for upcoming marathons or running events using the available tools.
-- Help with gear recommendations, weather considerations, and race prep.
+- Provide guidance on running techniques, fitness tips, nutrition, and recovery strategies.
+- Recommend training schedules for runners at all levels — beginner to advanced.
+- Search for upcoming marathons or running events using the `google_search_marathon` tool.
+- Offer advice on race gear, weather preparation, and race-day strategies.
 
-Be helpful, concise, and encouraging. If the user asks about marathons or events, use the tool `google_search_marathon` to provide live data. Otherwise, answer naturally as a knowledgeable coach.
+Be helpful, concise, and encouraging in your responses.
+
+IMPORTANT:
+- When searching for marathons or running events, always return only events with **future dates**.
+- Use the `get_date_and_time()` tool to get the current date when needed to determine if an event is upcoming.
+- Do not include events that have already taken place or have unclear/ambiguous past dates.
+- If date information is missing or vague, prefer to exclude that result unless confident it is upcoming.
+- Never Show past events or those without clear future dates.
+
+If the user asks about marathons or events, use the `google_search_marathon` tool to provide **live, future event data**. For all other queries, respond naturally as a knowledgeable and supportive coach from RoadRunners India.
 """
 )
+
 
 
 def chatbot(state: State):
