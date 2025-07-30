@@ -153,7 +153,11 @@ def get_date_and_time(queary: str) -> str:
 tools = [google_search_marathon, get_date_and_time]
 
 # llm = init_chat_model("google_genai:gemini-2.0-flash")
-llm = init_chat_model("google_genai:gemini-2.5-flash")
+# llm = init_chat_model("google_genai:gemini-2.5-flash")
+
+openai_api_key = os.getenv("OPENAI_API_KEY")
+
+llm = init_chat_model("openai:gpt-4.1")
 llm_with_tools = llm.bind_tools(tools)
 
 
