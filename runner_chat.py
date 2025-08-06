@@ -5,6 +5,8 @@ from langgraph.graph import StateGraph, START, END
 from langgraph.graph.message import add_messages
 from langchain_core.tools import tool
 from langgraph.prebuilt import ToolNode, tools_condition
+import re
+from datetime import datetime
 
 from typing import List, Dict
 import httpx
@@ -139,6 +141,52 @@ def google_search_marathon(query: str, city: str = None) -> List[Dict[str, str]]
         return [{"error": str(e)}]
 
 
+from ddgs import DDGS
+@tool
+def get_marathon_events(query):
+    """
+    Search for future marathonevents related to the query using DuckDuckGo Search API.
+
+    Args:
+        query (str): The search query string.
+
+    Returns:
+        list: A list of dictionaries containing event details (title, link, snippet).
+    """
+    current_date = datetime.now()
+    future_results = []
+    all_results = []
+
+    with DDGS() as ddgs:
+        for r in ddgs.text(query, max_results=20):
+            title = r.get("title", "")
+            snippet = r.get("body", "")
+            link = r.get("href", "")
+
+            # Collect all results for fallback
+            all_results.append({"title": title, "link": link, "snippet": snippet})
+
+            # Try to find a date in the snippet
+            date_match = re.search(r'(\d{1,2}[\/\-\s]\w+[\/\-\s]\d{2,4})', snippet) or \
+                         re.search(r'(\w+\s+\d{1,2},\s+\d{4})', snippet) or \
+                         re.search(r'(\d{1,2}\s+\w+\s+\d{4})', snippet)
+
+            if date_match:
+                event_date = dateparser.parse(date_match.group(1))
+                if event_date and event_date.date() >= current_date.date():
+                    future_results.append({
+                        "title": title,
+                        "link": link,
+                        "snippet": snippet
+                    })
+
+    # ✅ If no future-dated events, return top search results
+    return future_results or (all_results[:5] if all_results else [{
+        "title": "No upcoming marathons found.",
+        "link": "",
+        "snippet": "We couldn’t find any relevant events. Try a different city or broader search."
+    }])
+
 @tool
 def get_date_and_time(queary: str) -> str:
     """
@@ -150,7 +198,7 @@ def get_date_and_time(queary: str) -> str:
     return datetime.now().isoformat()
 
 
-tools = [google_search_marathon, get_date_and_time]
+tools = [google_search_marathon, get_date_and_time, get_marathon_events]
 
 # llm = init_chat_model("google_genai:gemini-2.0-flash")
 # llm = init_chat_model("google_genai:gemini-2.5-flash")
