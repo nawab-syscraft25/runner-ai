@@ -71,7 +71,7 @@
       /* word-break: break-all; */
       word-wrap: break-word;
       overflow-wrap: break-word;
-      white-space: normal;
+      /* white-space: normal; */
     }
  
     .text {
@@ -86,6 +86,7 @@
       background-color: #f5f6fa;
       display: flex;
       position: relative;
+      border-radius: 10px;
     }
  
     .chat-input input {
@@ -93,7 +94,7 @@
       font-size: 14px;
       border: 1px solid #ccc;
       border-radius: 50px;
-      padding: 12px 50px 12px 20px;
+      padding: 12px 150px 12px 20px;
     }
  
     .typing {
@@ -136,10 +137,63 @@
         padding: 0px;
         line-height: 38px;
     }
+    .mic-btn
+    {
+        color: #fff;
+        background-color: #28a745;
+        border-radius: 50px;
+        position: absolute;
+        top: 15px;
+        right: 58px;
+        height: 36px;
+        width: 36px;
+        padding: 0px;
+        line-height: 38px;
+    }
+    .mic-btn.recording
+    {
+        background-color: #dc3545;
+        animation: pulse 1s infinite;
+    }
+    .speaker-btn
+    {
+        color: #fff;
+        background-color: #17a2b8;
+        border-radius: 50px;
+        position: absolute;
+        top: 15px;
+        right: 100px;
+        height: 36px;
+        width: 36px;
+        padding: 0px;
+        line-height: 38px;
+    }
+    .speaker-btn.muted
+    {
+        background-color: #6c757d;
+    }
+    @keyframes pulse {
+      0% { transform: scale(1); opacity: 1; }
+      50% { transform: scale(1.1); opacity: 0.8; }
+      100% { transform: scale(1); opacity: 1; }
+    }
+    
+    .speaker-btn.speaking {
+      animation: pulse 0.8s infinite;
+      background-color: #28a745 !important;
+    }
     .send-btn:hover
     {
         background-color: #67676b;
         color: #fdc008;
+    }
+    .mic-btn:hover
+    {
+        background-color: #218838;
+    }
+    .speaker-btn:hover
+    {
+        background-color: #138496;
     }
     .chat-input input:focus
     {
@@ -154,7 +208,7 @@
         }
         .chat-input input
         {
-            padding: 20px 50px 20px 20px;
+            padding: 20px 170px 20px 20px;
         }
         .chat-input button
         {
@@ -162,7 +216,18 @@
             font-size: 1.1rem;
             height: 50px;
             top: 17px;
+        }
+        .send-btn
+        {
             right: 20px;
+        }
+        .mic-btn
+        {
+            right: 80px;
+        }
+        .speaker-btn
+        {
+            right: 140px;
         }
     }
     @media (max-width: 576px) {
@@ -171,9 +236,28 @@
         height: 90vh;
       }
  
-      .chat-input button {
-        width: 80px;
+      .chat-input input {
+        padding: 12px 150px 12px 15px;
         font-size: 0.9rem;
+      }
+      
+      .chat-input button {
+        width: 32px;
+        height: 32px;
+        font-size: 0.8rem;
+        top: 16px;
+      }
+      
+      .send-btn {
+        right: 15px;
+      }
+      
+      .mic-btn {
+        right: 52px;
+      }
+      
+      .speaker-btn {
+        right: 89px;
       }
  
       .chat-header {
@@ -198,12 +282,357 @@
     </div>
     <div class="chat-input">
       <input type="text" id="user-input" placeholder="Ask me about running or marathons..." class="form-control" />
+      <button class="mic-btn btn" onclick="toggleSpeechRecognition()" id="mic-btn" title="Voice Input"><i class="fa-solid fa-microphone"></i></button>
+      <button class="speaker-btn btn" onclick="toggleTextToSpeech()" id="speaker-btn" title="Toggle Voice Output"><i class="fa-solid fa-volume-up"></i></button>
       <button class="send-btn btn" onclick="sendMessage()" id="send-btn"><i class="fa-solid fa-paper-plane"></i></button>
     </div>
   </div>
  
   <script>
   const sessionId = Math.random().toString(36).substring(2);
+  
+  // Speech Recognition Variables
+  let recognition = null;
+  let isRecording = false;
+  
+  // Text-to-Speech Variables
+  let speechEnabled = true;
+  let currentSpeech = null;
+  
+  // Initialize Speech Recognition
+  function initSpeechRecognition() {
+    if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
+      recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
+      recognition.continuous = false;
+      recognition.interimResults = true;
+      recognition.lang = 'en-US';
+      
+      recognition.onstart = function() {
+        isRecording = true;
+        const micBtn = document.getElementById('mic-btn');
+        micBtn.classList.add('recording');
+        micBtn.innerHTML = '<i class="fa-solid fa-stop"></i>';
+        micBtn.title = 'Stop Recording';
+        document.getElementById('user-input').placeholder = 'Listening...';
+      };
+      
+      recognition.onresult = function(event) {
+        let finalTranscript = '';
+        let interimTranscript = '';
+        
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+          const transcript = event.results[i][0].transcript;
+          if (event.results[i].isFinal) {
+            finalTranscript += transcript;
+          } else {
+            interimTranscript += transcript;
+          }
+        }
+        
+        const input = document.getElementById('user-input');
+        input.value = finalTranscript || interimTranscript;
+      };
+      
+      recognition.onend = function() {
+        isRecording = false;
+        const micBtn = document.getElementById('mic-btn');
+        micBtn.classList.remove('recording');
+        micBtn.innerHTML = '<i class="fa-solid fa-microphone"></i>';
+        micBtn.title = 'Voice Input';
+        document.getElementById('user-input').placeholder = 'Ask me about running or marathons...';
+        
+        // Auto-send if we have text
+        const input = document.getElementById('user-input');
+        if (input.value.trim()) {
+          sendMessage();
+        }
+      };
+      
+      recognition.onerror = function(event) {
+        console.error('Speech recognition error:', event.error);
+        isRecording = false;
+        const micBtn = document.getElementById('mic-btn');
+        micBtn.classList.remove('recording');
+        micBtn.innerHTML = '<i class="fa-solid fa-microphone"></i>';
+        micBtn.title = 'Voice Input';
+        document.getElementById('user-input').placeholder = 'Ask me about running or marathons...';
+      };
+    } else {
+      console.warn('Speech recognition not supported in this browser');
+    }
+  }
+  
+  // Toggle Speech Recognition
+  function toggleSpeechRecognition() {
+    if (!recognition) {
+      alert('Speech recognition is not supported in your browser. Please use Chrome, Safari, or Edge.');
+      return;
+    }
+    
+    if (isRecording) {
+      recognition.stop();
+    } else {
+      recognition.start();
+    }
+  }
+  
+  // Enhanced Text-to-Speech Function
+  function speakText(text) {
+    if (!speechEnabled || !('speechSynthesis' in window)) {
+      return;
+    }
+    
+    // Stop any current speech immediately
+    speechSynthesis.cancel();
+    
+    // Clean text for speech (remove HTML and markdown)
+    const tempDiv = document.createElement('div');
+    tempDiv.innerHTML = text;
+    let cleanText = tempDiv.textContent || tempDiv.innerText || '';
+    
+    if (!cleanText.trim()) return;
+    
+    // Clean up common markdown and special characters for better speech
+    cleanText = cleanText
+      .replace(/\*\*(.*?)\*\*/g, '$1')  // Remove bold markdown
+      .replace(/\*(.*?)\*/g, '$1')      // Remove italic markdown
+      .replace(/`(.*?)`/g, '$1')        // Remove code backticks
+      .replace(/#{1,6}\s/g, '')         // Remove heading markers
+      .replace(/\n{2,}/g, '. ')         // Replace multiple newlines with period
+      .replace(/\n/g, ', ')             // Replace single newlines with comma
+      .replace(/\s{2,}/g, ' ')          // Replace multiple spaces with single space
+      .trim();
+    
+    // Split long text into chunks for better performance
+    const maxLength = 200;
+    const chunks = splitTextIntoChunks(cleanText, maxLength);
+    
+    speakChunks(chunks, 0);
+  }
+  
+  // Function to split text into manageable chunks
+  function splitTextIntoChunks(text, maxLength) {
+    if (text.length <= maxLength) {
+      return [text];
+    }
+    
+    const chunks = [];
+    let currentChunk = '';
+    const sentences = text.split(/[.!?]+/);
+    
+    for (let sentence of sentences) {
+      sentence = sentence.trim();
+      if (!sentence) continue;
+      
+      if (currentChunk.length + sentence.length + 1 <= maxLength) {
+        currentChunk += (currentChunk ? '. ' : '') + sentence;
+      } else {
+        if (currentChunk) {
+          chunks.push(currentChunk + '.');
+          currentChunk = sentence;
+        } else {
+          // If single sentence is too long, split by words
+          const words = sentence.split(' ');
+          let wordChunk = '';
+          for (let word of words) {
+            if (wordChunk.length + word.length + 1 <= maxLength) {
+              wordChunk += (wordChunk ? ' ' : '') + word;
+            } else {
+              if (wordChunk) chunks.push(wordChunk);
+              wordChunk = word;
+            }
+          }
+          if (wordChunk) currentChunk = wordChunk;
+        }
+      }
+    }
+    
+    if (currentChunk) {
+      chunks.push(currentChunk + (currentChunk.endsWith('.') ? '' : '.'));
+    }
+    
+    return chunks.filter(chunk => chunk.trim());
+  }
+  
+  // Function to speak text chunks sequentially with better indicators
+  function speakChunks(chunks, index) {
+    if (index >= chunks.length || !speechEnabled) {
+      currentSpeech = null;
+      // Remove speaking indicator when done
+      const speakerBtn = document.getElementById('speaker-btn');
+      if (speakerBtn) {
+        speakerBtn.classList.remove('speaking');
+        speakerBtn.style.animation = 'none';
+      }
+      return;
+    }
+    
+    // Add speaking indicator if this is the first chunk
+    if (index === 0) {
+      const speakerBtn = document.getElementById('speaker-btn');
+      if (speakerBtn) {
+        speakerBtn.classList.add('speaking');
+      }
+    }
+    
+    const chunk = chunks[index];
+    currentSpeech = new SpeechSynthesisUtterance(chunk);
+    
+    // Optimized speech settings for faster, clearer speech
+    currentSpeech.rate = 1.3;        // Faster speech rate
+    currentSpeech.pitch = 1.1;       // Slightly higher pitch for clarity
+    currentSpeech.volume = 0.9;      // Slightly lower volume to avoid distortion
+    
+    // Get the best available voice
+    const voices = speechSynthesis.getVoices();
+    const bestVoice = getBestVoice(voices);
+    if (bestVoice) {
+      currentSpeech.voice = bestVoice;
+    }
+    
+    // Set up event handlers
+    currentSpeech.onend = function() {
+      if (speechEnabled) {
+        setTimeout(() => speakChunks(chunks, index + 1), 50); // Shorter pause between chunks
+      } else {
+        // Remove speaking indicator if speech was disabled
+        const speakerBtn = document.getElementById('speaker-btn');
+        if (speakerBtn) {
+          speakerBtn.classList.remove('speaking');
+          speakerBtn.style.animation = 'none';
+        }
+      }
+    };
+    
+    currentSpeech.onerror = function(event) {
+      console.error('Speech synthesis error:', event.error);
+      currentSpeech = null;
+      // Remove speaking indicator on error
+      const speakerBtn = document.getElementById('speaker-btn');
+      if (speakerBtn) {
+        speakerBtn.classList.remove('speaking');
+        speakerBtn.style.animation = 'none';
+      }
+    };
+    
+    // Speak the chunk
+    speechSynthesis.speak(currentSpeech);
+  }
+  
+  // Function to select the best available voice
+  function getBestVoice(voices) {
+    // Priority order for voice selection
+    const voicePreferences = [
+      // Google voices (usually highest quality)
+      v => v.name.includes('Google') && v.lang.startsWith('en-'),
+      // Microsoft voices
+      v => v.name.includes('Microsoft') && v.lang.startsWith('en-'),
+      // Female voices (often clearer)
+      v => (v.name.includes('Female') || v.name.includes('Woman')) && v.lang.startsWith('en-'),
+      // Any English voice marked as local
+      v => v.lang.startsWith('en-') && v.localService,
+      // Any English voice
+      v => v.lang.startsWith('en-'),
+      // Default voice
+      v => v.default
+    ];
+    
+    for (let preference of voicePreferences) {
+      const voice = voices.find(preference);
+      if (voice) return voice;
+    }
+    
+    return voices[0]; // Fallback to first available voice
+  }
+  
+  // Enhanced Toggle Text-to-Speech with better feedback
+  function toggleTextToSpeech() {
+    speechEnabled = !speechEnabled;
+    const speakerBtn = document.getElementById('speaker-btn');
+    
+    if (speechEnabled) {
+      speakerBtn.classList.remove('muted');
+      speakerBtn.innerHTML = '<i class="fa-solid fa-volume-up"></i>';
+      speakerBtn.title = 'Voice Output: ON (Click to disable)';
+      speakerBtn.style.backgroundColor = '#17a2b8';
+      
+      // Give audio feedback when enabling
+      if ('speechSynthesis' in window) {
+        const testSpeech = new SpeechSynthesisUtterance('Voice output enabled');
+        testSpeech.rate = 1.2;
+        testSpeech.volume = 0.7;
+        testSpeech.pitch = 1.1;
+        speechSynthesis.speak(testSpeech);
+      }
+    } else {
+      speakerBtn.classList.add('muted');
+      speakerBtn.innerHTML = '<i class="fa-solid fa-volume-mute"></i>';
+      speakerBtn.title = 'Voice Output: OFF (Click to enable)';
+      speakerBtn.style.backgroundColor = '#6c757d';
+      
+      // Stop any current speech immediately
+      speechSynthesis.cancel();
+      currentSpeech = null;
+    }
+  }
+  
+  // Function to stop current speech (useful for interrupting long responses)
+  function stopCurrentSpeech() {
+    speechSynthesis.cancel();
+    currentSpeech = null;
+  }
+  
+  // Enhanced initialization with voice preloading
+  document.addEventListener('DOMContentLoaded', function() {
+    initSpeechRecognition();
+    
+    // Enhanced voice loading and preloading
+    if ('speechSynthesis' in window) {
+      // Force load voices immediately
+      const loadVoices = () => {
+        const voices = speechSynthesis.getVoices();
+        if (voices.length > 0) {
+          console.log('Loaded', voices.length, 'voices for text-to-speech');
+          // Test the speech synthesis is working
+          const testVoice = getBestVoice(voices);
+          if (testVoice) {
+            console.log('Using voice:', testVoice.name);
+          }
+        } else {
+          // Retry loading voices
+          setTimeout(loadVoices, 100);
+        }
+      };
+      
+      speechSynthesis.addEventListener('voiceschanged', loadVoices);
+      loadVoices(); // Try to load immediately
+      
+      // Warmup speech synthesis for faster first use
+      setTimeout(() => {
+        const warmupSpeech = new SpeechSynthesisUtterance('');
+        warmupSpeech.volume = 0;
+        speechSynthesis.speak(warmupSpeech);
+      }, 1000);
+    }
+    
+    // Add keyboard shortcut for voice toggle (Ctrl+Shift+V)
+    document.addEventListener('keydown', function(e) {
+      if (e.ctrlKey && e.shiftKey && e.key === 'V') {
+        e.preventDefault();
+        toggleTextToSpeech();
+      }
+      // Add escape key to stop current speech
+      if (e.key === 'Escape' && currentSpeech) {
+        stopCurrentSpeech();
+      }
+    });
+    
+    // Update speaker button tooltip with keyboard shortcut info
+    const speakerBtn = document.getElementById('speaker-btn');
+    if (speakerBtn) {
+      speakerBtn.title = 'Voice Output: ON (Ctrl+Shift+V to toggle, Esc to stop)';
+    }
+  });
  
   function appendMessage(sender, initialText = "") {
     const chatBody = document.getElementById("chat-body");
@@ -309,7 +738,19 @@
         const raw = data.data.answer || data.data;
         const formatted = formatResponse(raw);
         const botBubble = appendMessage("bot", "");
-        typeText(botBubble, formatted, enableInput);
+        
+        // Start speaking immediately when response arrives
+        if (speechEnabled) {
+          const speakerBtn = document.getElementById('speaker-btn');
+          if (speakerBtn) {
+            speakerBtn.style.animation = 'pulse 0.8s infinite';
+          }
+          speakText(raw);
+        }
+        
+        typeText(botBubble, formatted, function() {
+          enableInput();
+        });
       } else {
         appendMessage("bot", "⚠️ Error: " + (data.error || "Unknown error"));
         enableInput();
